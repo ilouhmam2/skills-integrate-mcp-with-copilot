@@ -48,3 +48,23 @@ The application uses a simple data model with meaningful identifiers:
    - Grade level
 
 All data is stored in memory, which means data will be reset when the server restarts.
+
+## Admin Mode (teacher-only registration)
+
+This project supports a simple "admin mode" where teachers can register and
+unregister students. For now this uses HTTP Basic auth with credentials stored
+in `src/teachers.json`.
+
+To use admin endpoints:
+
+1. Edit `src/teachers.json` and add teacher credentials (username/password).
+2. Use HTTP Basic auth when calling the signup or unregister endpoints. For
+   example, with curl:
+
+```bash
+curl -u teacher:password123 -X POST "http://localhost:8000/activities/Chess%20Club/signup?email=student@mergington.edu"
+```
+
+Note: This is a simple development convenience. For production, replace this
+with a proper authentication system and hashed passwords.
+
