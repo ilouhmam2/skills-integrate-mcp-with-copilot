@@ -5,11 +5,14 @@ A super simple FastAPI application that allows students to view and sign up
 for extracurricular activities at Mergington High School.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import os
 from pathlib import Path
+import json
+import secrets
 
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
@@ -18,6 +21,39 @@ app = FastAPI(title="Mergington High School API",
 current_dir = Path(__file__).parent
 app.mount("/static", StaticFiles(directory=os.path.join(Path(__file__).parent,
           "static")), name="static")
+
+# Simple HTTP Basic auth for admin (teachers)
+security = HTTPBasic()
+
+
+def verify_teacher(credentials: HTTPBasicCredentials = Depends(security)):
+    """Verify teacher credentials against `src/teachers.json`.
+
+    This implementation is intentionally simple (plaintext passwords in a
+    JSON file) and matches the current project guidance. For production use,
+    replace with a secure user store and hashed passwords.
+    """
+    teachers_file = current_dir / "teachers.json"
+    if not teachers_file.exists():
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Admin credentials not configured")
+
+    try:
+        with open(teachers_file, "r", encoding="utf-8") as f:
+            teachers = json.load(f)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Failed to read teachers configuration")
+
+    for t in teachers:
+        # Use secrets.compare_digest for timing-safe comparisons
+        if secrets.compare_digest(t.get("username", ""), credentials.username) and \
+           secrets.compare_digest(t.get("password", ""), credentials.password):
+            return True
+
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid credentials")
+
 
 # In-memory activity database
 activities = {
@@ -89,8 +125,13 @@ def get_activities():
 
 
 @app.post("/activities/{activity_name}/signup")
-def signup_for_activity(activity_name: str, email: str):
-    """Sign up a student for an activity"""
+def signup_for_activity(activity_name: str, email: str,
+                       _admin: bool = Depends(verify_teacher)):
+    """Sign up a student for an activity.
+
+    This action requires teacher (admin) credentials. Students should ask a
+    teacher to register them for now.
+    """
     # Validate activity exists
     if activity_name not in activities:
         raise HTTPException(status_code=404, detail="Activity not found")
@@ -111,8 +152,10 @@ def signup_for_activity(activity_name: str, email: str):
 
 
 @app.delete("/activities/{activity_name}/unregister")
-def unregister_from_activity(activity_name: str, email: str):
-    """Unregister a student from an activity"""
+def unregister_from_activity(activity_name: str, email: str,
+                             _admin: bool = Depends(verify_teacher)):
+    """Unregister a student from an activity (teacher-only).
+    """
     # Validate activity exists
     if activity_name not in activities:
         raise HTTPException(status_code=404, detail="Activity not found")
